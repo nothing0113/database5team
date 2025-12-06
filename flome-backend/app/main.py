@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from .database import engine, Base, SessionLocal
-from . import models, schemas
+from . import models, schemas, ai_service
 
 # Create tables on startup
 Base.metadata.create_all(bind=engine)
@@ -165,3 +165,11 @@ def read_orders(member_id: str, db: Session = Depends(get_db)):
             joinedload(models.Order.items).joinedload(models.OrderItem.product)
         ).filter(models.Order.member_id == member_id).order_by(models.Order.order_date.desc()).all()
     return orders
+
+# app/main.py (일부분)
+
+@app.post("/api/recommend")
+def recommend_bouquet(situation: str, db: Session = Depends(get_db)):
+    # 함수 이름이 변경되었습니다: recommend_flower_from_db -> generate_bouquet_recipe
+    result = ai_service.generate_bouquet_recipe(db, situation)
+    return {"result": result}
