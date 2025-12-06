@@ -2,20 +2,41 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Search, ShoppingCart, Star, Clock, 
-  ChevronDown, Plus, X, Camera, ChevronLeft, ChevronRight 
+  ChevronDown, Plus, X, Camera, ChevronLeft, ChevronRight, Loader2 
 } from 'lucide-react';
+import axios from '../api/axios';
 
 const StoreDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   
+  const [store, setStore] = useState(null); // 가게 정보
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   const [activeTab, setActiveTab] = useState('delivery'); 
   const [cartCount, setCartCount] = useState(0); 
   const [isScrolled, setIsScrolled] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false); 
 
-  // 초기 장바구니 개수 세팅
   useEffect(() => {
+    const fetchStoreDetail = async () => {
+      try {
+        setLoading(true);
+        const response = await axios.get(`/stores/${id}`);
+        console.log("가게 상세 데이터:", response.data);
+        setStore(response.data);
+      } catch (err) {
+        console.error("가게 정보 로딩 실패:", err);
+        setError("가게 정보를 불러올 수 없습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStoreDetail();
+
+    // 장바구니 상태 초기화
     const savedCart = JSON.parse(localStorage.getItem('cart') || '[]');
     setCartCount(savedCart.length);
 
@@ -24,19 +45,42 @@ const StoreDetail = () => {
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [id]);
 
-  // 🌟 핵심 기능: 장바구니 담기
+  const getProductEmoji = (name) => {
+    if (name.includes('장미')) return '🌹';
+    if (name.includes('튤립')) return '🌷';
+    if (name.includes('프리지아')) return '🌼';
+    if (name.includes('카네이션')) return '🌺';
+    if (name.includes('백합')) return '⚜️';
+    if (name.includes('안개')) return '🌫️';
+    if (name.includes('수국')) return '🌸';
+    if (name.includes('해바라기')) return '🌻';
+    return '💐';
+  };
+
+  const formatPrice = (price) => {
+    return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  };
+
   const handleAddToCart = (item) => {
     const currentCart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const newItem = { ...item, storeName: storeInfo.name }; // 가게 이름도 같이 저장
+    // store가 null일 수 있으므로 체크
+    if (!store) return;
+
+    const newItem = { 
+      id: item.product_id, // id 통일
+      name: item.name, 
+      price: item.price,
+      storeName: store.name,
+      storeId: store.store_id
+    }; 
     const updatedCart = [...currentCart, newItem];
     
-    localStorage.setItem('cart', JSON.stringify(updatedCart)); // 저장소 업데이트
-    setCartCount(updatedCart.length); // 화면 업데이트
+    localStorage.setItem('cart', JSON.stringify(updatedCart));
+    setCartCount(updatedCart.length);
     
-    // (선택) 간단한 알림 진동 효과 or 로그
-    // navigator.vibrate(50); 
+    if (navigator.vibrate) navigator.vibrate(50); 
   };
 
   const scrollReviews = (direction) => {
@@ -47,41 +91,14 @@ const StoreDetail = () => {
     }
   };
 
-  const storeInfo = {
-    id: 101,
-    name: "플로미 강남본점",
-    rating: 4.9,
-    reviewCount: "1,345",
-    minOrder: "15,000원",
-    deliveryTime: "25~40분",
-    deliveryFee: "무료",
-    bannerColor: "bg-pink-100", 
-  };
-
+  // 가짜 리뷰 데이터 (아직 백엔드 연결 안됨)
   const reviews = [
     { id: 1, user: "dooly**", rating: 5, content: "여자친구가 너무 좋아해요! 꽃 상태 최고🌹", img: "bg-red-100", tag: "사진리뷰" },
     { id: 2, user: "hgd**", rating: 5, content: "배달도 빠르고 포장도 꼼꼼합니다.", img: "bg-blue-100", tag: "재주문" },
-    { id: 3, user: "flower**", rating: 4, content: "생각보다 풍성하네요. 감사합니다.", img: null, tag: null },
-    { id: 4, user: "love**", rating: 5, content: "기념일 선물로 딱이에요!", img: "bg-yellow-100", tag: "사진리뷰" },
-    { id: 5, user: "happy**", rating: 5, content: "사장님이 친절하고 꽃이 싱싱해요.", img: "bg-purple-100", tag: "단골" },
   ];
 
-  const menus = [
-    {
-      category: "💗 사장님 추천 (인기)",
-      items: [
-        { id: 1, name: "로맨틱 레드 장미 10송이", price: "35,000", desc: "고백 성공률 100%! 클래식은 영원합니다.", img: "🌹", tag: "인기" },
-        { id: 2, name: "파스텔 튤립 믹스", price: "28,000", desc: "봄을 담은 화사한 색감, 여자친구 선물 1위", img: "🌷", tag: "추천" },
-      ]
-    },
-    {
-      category: "🎓 졸업/축하 꽃다발",
-      items: [
-        { id: 3, name: "화려한 프리지아 다발", price: "22,000", desc: "응원의 마음을 담은 노란 프리지아", img: "🌼", tag: null },
-        { id: 4, name: "대형 믹스 꽃다발", price: "55,000", desc: "사진 정말 잘 나오는 풍성한 구성", img: "💐", tag: null },
-      ]
-    }
-  ];
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-pink-500"/></div>;
+  if (error || !store) return <div className="min-h-screen flex items-center justify-center text-gray-500">가게를 찾을 수 없습니다.</div>;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -141,7 +158,7 @@ const StoreDetail = () => {
       </div>
 
       {/* 가게 배너 */}
-      <div className={`w-full h-64 ${storeInfo.bannerColor} relative flex items-center justify-center`}>
+      <div className={`w-full h-64 bg-pink-100 relative flex items-center justify-center`}>
         <span className="text-8xl filter drop-shadow-md">🏡</span>
         <div className="absolute bottom-0 left-0 w-full h-8 bg-gray-50 rounded-t-[2rem]"></div>
       </div>
@@ -149,13 +166,13 @@ const StoreDetail = () => {
       {/* 가게 정보 */}
       <div className="px-5 -mt-2 bg-gray-50 relative">
         <div className="text-center mb-4">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">{storeInfo.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">{store.name}</h1>
           <div className="flex items-center justify-center gap-1 text-sm">
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-            <span className="font-bold">{storeInfo.rating}</span>
-            <span className="text-gray-400">({storeInfo.reviewCount})</span>
+            <span className="font-bold">4.9</span> {/* 평점 임시값 */}
+            <span className="text-gray-400">(100+)</span>
             <span className="text-gray-300">|</span>
-            <span className="text-gray-500">가게정보 &gt;</span>
+            <span className="text-gray-500">{store.address}</span>
           </div>
         </div>
 
@@ -166,27 +183,25 @@ const StoreDetail = () => {
 
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
           <div className="flex justify-between items-center mb-2">
-             <span className="text-gray-500 text-sm">최소주문</span>
-             <span className="font-bold text-gray-900">{storeInfo.minOrder}</span>
+             <span className="text-gray-500 text-sm">영업시간</span>
+             <span className="font-bold text-gray-900">{store.business_hours || "09:00 ~ 22:00"}</span>
           </div>
           <div className="flex justify-between items-center mb-2">
              <div className="flex items-center gap-1"><span className="text-gray-500 text-sm">배달시간</span><Clock className="w-3 h-3 text-gray-400" /></div>
-             <span className="font-bold text-gray-900">{storeInfo.deliveryTime}</span>
+             <span className="font-bold text-gray-900">30~45분</span>
           </div>
           <div className="flex justify-between items-center">
              <span className="text-gray-500 text-sm">배달팁</span>
-             <span className="font-bold text-gray-900">{storeInfo.deliveryFee}</span>
+             <span className="font-bold text-gray-900">무료</span>
           </div>
         </div>
       </div>
 
-      {/* 리뷰 슬라이드 */}
+      {/* 리뷰 슬라이드 (가짜 데이터) */}
       <div className="bg-gray-50 overflow-hidden pb-6">
         <div className="flex justify-between items-center px-5 mb-3">
-          <h3 className="font-bold text-lg text-gray-900 flex items-center gap-1">최근 리뷰 <span className="text-pink-500">{storeInfo.reviewCount}</span></h3>
-          <span 
-          onClick={() => navigate(`/store/${id}/reviews`)}
-          className="text-xs text-gray-400 cursor-pointer">전체보기 &gt;</span>
+          <h3 className="font-bold text-lg text-gray-900 flex items-center gap-1">최근 리뷰 <span className="text-pink-500">{reviews.length}</span></h3>
+          <span className="text-xs text-gray-400 cursor-pointer">전체보기 &gt;</span>
         </div>
         <div className="relative group px-1">
           <button onClick={() => scrollReviews('left')} className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover:opacity-100 transition"><ChevronLeft className="w-5 h-5" /></button>
@@ -206,46 +221,45 @@ const StoreDetail = () => {
                 </div>
               </div>
             ))}
-            <div className="min-w-[80px] flex items-center justify-center bg-white rounded-xl border border-gray-100 cursor-pointer">
-              <div className="text-center"><div className="w-8 h-8 rounded-full bg-gray-100 mx-auto flex items-center justify-center mb-1"><ChevronDown className="w-4 h-4 text-gray-400 -rotate-90" /></div><span className="text-xs text-gray-400">더보기</span></div>
-            </div>
           </div>
           <button onClick={() => scrollReviews('right')} className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover:opacity-100 transition"><ChevronRight className="w-5 h-5" /></button>
         </div>
       </div>
 
-      {/* 메뉴 리스트 */}
+      {/* 메뉴 리스트 (API 데이터 사용) */}
       <div className="bg-white">
-        {menus.map((section, idx) => (
-          <div key={idx}>
-            <div className="px-5 py-4 bg-gray-50 border-b border-gray-100"><h2 className="text-lg font-bold text-gray-800">{section.category}</h2></div>
-            <div>
-              {section.items.map((item) => (
-                <div key={item.id} className="flex justify-between p-5 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition">
-                  <div className="flex-1 pr-4">
-                    {item.tag && <span className="text-[10px] font-bold text-pink-500 bg-pink-50 px-1.5 py-0.5 rounded-sm mb-1 inline-block">{item.tag}</span>}
-                    <h3 className="font-bold text-gray-900 text-lg mb-1">{item.name}</h3>
-                    <p className="text-sm text-gray-500 mb-2 line-clamp-2">{item.desc}</p>
-                    <p className="font-bold text-gray-900 text-lg">{item.price}원</p>
-                  </div>
-                  <div className="relative w-28 h-28 flex-shrink-0">
-                    <div className="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center text-5xl">{item.img}</div>
-                    {/* 🌟 담기 버튼 */}
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAddToCart(item); // 담기 함수 실행
-                      }}
-                      className="absolute bottom-2 right-2 bg-white rounded-full p-1.5 shadow-md border border-gray-200 hover:bg-pink-50 transition active:scale-90"
-                    >
-                      <Plus className="w-5 h-5 text-gray-700" />
-                    </button>
-                  </div>
+        <div className="px-5 py-4 bg-gray-50 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-gray-800">전체 상품</h2>
+        </div>
+        <div>
+            {(store.products || []).length === 0 && (
+                <div className="p-10 text-center text-gray-400">상품이 준비 중입니다.</div>
+            )}
+            {(store.products || []).map((item) => (
+            <div key={item.product_id} className="flex justify-between p-5 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition">
+                <div className="flex-1 pr-4">
+                <h3 className="font-bold text-gray-900 text-lg mb-1">{item.name}</h3>
+                <p className="text-sm text-gray-500 mb-2 line-clamp-2">싱싱하고 예쁜 꽃입니다.</p>
+                <p className="font-bold text-gray-900 text-lg">{formatPrice(item.price)}원</p>
                 </div>
-              ))}
+                <div className="relative w-28 h-28 flex-shrink-0">
+                <div className="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center text-5xl">
+                    {getProductEmoji(item.name)}
+                </div>
+                {/* 🌟 담기 버튼 */}
+                <button 
+                    onClick={(e) => {
+                    e.stopPropagation();
+                    handleAddToCart(item); // 담기 함수 실행
+                    }}
+                    className="absolute bottom-2 right-2 bg-white rounded-full p-1.5 shadow-md border border-gray-200 hover:bg-pink-50 transition active:scale-90"
+                >
+                    <Plus className="w-5 h-5 text-gray-700" />
+                </button>
+                </div>
             </div>
-          </div>
-        ))}
+            ))}
+        </div>
       </div>
 
       {/* 🌟 플로팅 장바구니 버튼 */}
@@ -261,7 +275,8 @@ const StoreDetail = () => {
               </div>
               <span>장바구니 보기</span>
             </div>
-            <span>{(cartCount * 35000).toLocaleString()}원~</span>
+            {/* 가격 합계는 프론트에서 계산하기 복잡해졌으므로 일단 숨김 or 개수만 표시 */}
+            <span>이동하기 &gt;</span>
           </button>
         </div>
       )}

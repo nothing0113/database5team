@@ -1,29 +1,45 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, Minus, Plus } from 'lucide-react';
+import axios from '../api/axios';
 
 const Cart = () => {
   const navigate = useNavigate();
   const [cartItems, setCartItems] = useState([]);
-  const [myBalance, setMyBalance] = useState(0); // 내 잔액 상태
+  const [currentUser, setCurrentUser] = useState(null);
+  const [myBalance, setMyBalance] = useState(0); // 잔액 상태
 
   useEffect(() => {
     // 장바구니 불러오기
     const savedCart = localStorage.getItem('cart');
     if (savedCart) setCartItems(JSON.parse(savedCart));
 
-    // 🌟 내 잔액 불러오기
-    const balance = localStorage.getItem('userBalance');
-    if (balance) setMyBalance(parseInt(balance));
-    else {
-        // 잔액이 없으면 0원 혹은 초기화 로직 (여기선 0원 처리)
-        setMyBalance(0);
-    }
+    // 로그인 정보 및 잔액 불러오기
+    const fetchUserInfo = async () => {
+      const userStr = localStorage.getItem('currentUser');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        setCurrentUser(user);
+        
+        try {
+          // 백엔드에서 최신 잔액 조회
+          const response = await axios.get('/me', { 
+            params: { member_id: user.member_id } 
+          });
+          setMyBalance(response.data.money);
+        } catch (err) {
+          console.error("잔액 정보 로딩 실패:", err);
+          // 실패 시 로컬 정보라도 쓰거나 0원 처리
+          setMyBalance(user.money || 0);
+        }
+      }
+    };
+    
+    fetchUserInfo();
   }, []);
 
-  const parsePrice = (priceStr) => parseInt(priceStr.replace(/,/g, ''), 10);
-  const totalPrice = cartItems.reduce((acc, item) => acc + parsePrice(item.price), 0);
-  const finalPrice = totalPrice; // 배달비 무료 가정
+  const totalPrice = cartItems.reduce((acc, item) => acc + (parseInt(item.price) || 0), 0);
+  const finalPrice = totalPrice;
 
   const removeItem = (index) => {
     const newCart = cartItems.filter((_, i) => i !== index);
@@ -36,24 +52,72 @@ const Cart = () => {
     localStorage.removeItem('cart');
   };
 
-  // 🌟 핵심: 결제 및 차감 로직
-  const handlePayment = () => {
+  // 🌟 실제 주문 API 호출
+  const handlePayment = async () => {
     if (cartItems.length === 0) return;
 
-    // 1. 잔액 부족 확인
-    if (myBalance < finalPrice) {
-      alert(`잔액이 부족합니다! 😱\n현재 잔액: ${myBalance.toLocaleString()}원\n필요 금액: ${finalPrice.toLocaleString()}원`);
-      return;
+    // 1. 로그인 확인
+    if (!currentUser) {
+        alert("로그인이 필요합니다!");
+        navigate('/login');
+        return;
     }
 
-    // 2. 결제 진행 (차감)
-    const newBalance = myBalance - finalPrice;
-    localStorage.setItem('userBalance', newBalance.toString()); // 잔액 업데이트
-    
-    // 3. 장바구니 비우기 및 성공 처리
-    clearCart();
-    alert(`결제가 완료되었습니다! 🌸\n남은 잔액: ${newBalance.toLocaleString()}원`);
-    navigate('/mypage'); // 마이페이지로 이동해서 잔액 확인
+    // 2. 잔액 확인 (프론트엔드 체크)
+    if (myBalance < finalPrice) {
+        alert(`잔액이 부족합니다! 😱
+현재 잔액: ${myBalance.toLocaleString()}원
+필요 금액: ${finalPrice.toLocaleString()}원`);
+        return;
+    }
+
+    // 3. 데이터 가공
+    const targetStoreId = cartItems[0].storeId;
+    const targetStoreName = cartItems[0].storeName;
+
+    const targetItems = cartItems.filter(item => item.storeId === targetStoreId);
+    if (targetItems.length !== cartItems.length) {
+        if(!window.confirm(`"${targetStoreName}" 상품만 먼저 주문하시겠습니까?
+(다른 가게 상품은 제외됩니다)`)) {
+            return;
+        }
+    }
+
+    const itemsMap = {};
+    targetItems.forEach(item => {
+        if (itemsMap[item.id]) {
+            itemsMap[item.id] += 1;
+        } else {
+            itemsMap[item.id] = 1;
+        }
+    });
+
+    const orderItems = Object.keys(itemsMap).map(productId => ({
+        product_id: productId,
+        quantity: itemsMap[productId]
+    }));
+
+    // 4. API 호출
+    try {
+        const response = await axios.post('/orders', {
+            store_id: targetStoreId,
+            member_id: currentUser.member_id,
+            items: orderItems
+        });
+
+        if (response.status === 200) {
+            alert(`주문이 완료되었습니다! 🌸
+주문번호: ${response.data.order_id.substring(0, 8)}...
+남은 잔액: ${(myBalance - finalPrice).toLocaleString()}원`);
+            
+            clearCart();
+            navigate('/'); 
+        }
+    } catch (error) {
+        console.error("주문 실패:", error);
+        const msg = error.response?.data?.detail || "주문에 실패했습니다.";
+        alert("주문 실패: " + msg);
+    }
   };
 
   if (cartItems.length === 0) {
@@ -75,7 +139,7 @@ const Cart = () => {
       </div>
 
       <div className="p-4 space-y-4">
-        {/* 현재 잔액 표시 배너 */}
+        {/* 잔액 표시 배너 */}
         <div className="bg-gray-800 text-white p-4 rounded-xl flex justify-between items-center shadow-md">
             <span className="font-bold text-sm">내 FloMe Pay 잔액</span>
             <span className="font-bold text-pink-400">{myBalance.toLocaleString()}원</span>
@@ -91,8 +155,7 @@ const Cart = () => {
               <div key={index} className="flex p-4 border-b border-gray-50 last:border-0">
                 <div className="flex-1">
                   <h3 className="font-bold text-gray-900 mb-1">{item.name}</h3>
-                  <p className="text-sm text-gray-500 mb-2">기본: 가격 {item.price}원</p>
-                  <p className="font-bold text-gray-900">{item.price}원</p>
+                  <p className="font-bold text-gray-900">{parseInt(item.price).toLocaleString()}원</p>
                 </div>
                 <button onClick={() => removeItem(index)} className="text-gray-400 hover:text-red-500 p-1 self-start"><Trash2 className="w-4 h-4" /></button>
               </div>
@@ -108,7 +171,7 @@ const Cart = () => {
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 max-w-md mx-auto">
         <button 
-          onClick={handlePayment} // 🌟 결제 함수 연결
+          onClick={handlePayment} 
           className="w-full bg-pink-500 text-white font-bold h-14 rounded-xl shadow-lg hover:bg-pink-600 transition flex items-center justify-center gap-2"
         >
           <span>{finalPrice.toLocaleString()}원 결제하기</span>

@@ -7,7 +7,7 @@ from sqlalchemy.sql import func
 
 from .database import Base
 
-# Enums
+# Enums (열거형 정의)
 class MemberType(str, enum.Enum):
     USER = "USER"
     OWNER = "OWNER"
@@ -26,7 +26,7 @@ class OrderStatus(str, enum.Enum):
     PREPARING = "PREPARING"
     PICKED_UP = "PICKED_UP"
 
-# Models
+# Models (테이블 정의)
 
 class Member(Base):
     __tablename__ = "members"
@@ -35,13 +35,14 @@ class Member(Base):
     password = Column(String, nullable=False)
     name = Column(String, nullable=False)
     contact = Column(String, nullable=False)
-    type = Column(SAEnum(MemberType), nullable=False)
+    type = Column(SAEnum(MemberType), nullable=False, default=MemberType.USER)
     location_agree = Column(Boolean, default=False)
     money = Column(Integer, default=0, nullable=False)
 
     # Relationships
     stores = relationship("Store", back_populates="owner")
     orders = relationship("Order", back_populates="member")
+    reviews = relationship("Review", back_populates="writer") # [추가] 내가 쓴 리뷰들
 
 
 class Store(Base):
@@ -119,6 +120,40 @@ class Order(Base):
     member = relationship("Member", back_populates="orders")
     store = relationship("Store", back_populates="orders")
     ai_content = relationship("AIContent", back_populates="order", uselist=False)
+    
+    # [추가] 새로 추가된 테이블들과의 관계
+    items = relationship("OrderItem", back_populates="order")
+    payment = relationship("Payment", back_populates="order", uselist=False)
+    review = relationship("Review", back_populates="order", uselist=False)
+
+
+# [추가] 주문 상세 테이블 (어떤 상품을 몇 개 샀는지)
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    item_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.order_id"), nullable=False)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.product_id"), nullable=False)
+    quantity = Column(Integer, default=1, nullable=False)
+    snapshot_price = Column(Integer, nullable=False) # 주문 시점 가격 저장
+
+    # Relationships
+    order = relationship("Order", back_populates="items")
+    product = relationship("Product") # 상품 정보 참조
+
+
+# [추가] 결제 테이블
+class Payment(Base):
+    __tablename__ = "payments"
+
+    payment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.order_id"), unique=True, nullable=False)
+    amount = Column(Integer, nullable=False)
+    method = Column(String, nullable=False) # CARD, CASH 등
+    paid_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    order = relationship("Order", back_populates="payment")
 
 
 class AIContent(Base):
@@ -133,3 +168,19 @@ class AIContent(Base):
 
     # Relationships
     order = relationship("Order", back_populates="ai_content")
+
+
+# [추가] 리뷰 테이블
+class Review(Base):
+    __tablename__ = "reviews"
+
+    review_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.order_id"), unique=True, nullable=False)
+    writer_id = Column(String, ForeignKey("members.member_id"), nullable=False) # 작성자
+    rating = Column(Integer, nullable=False) # 별점 1~5
+    content = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    order = relationship("Order", back_populates="review")
+    writer = relationship("Member", back_populates="reviews")

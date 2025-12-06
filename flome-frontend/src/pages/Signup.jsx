@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { UserPlus, Mail, Lock, User } from 'lucide-react';
+import axios from '../api/axios';
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -15,27 +16,33 @@ const Signup = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSignup = (e) => {
+  const handleSignup = async (e) => {
     e.preventDefault();
 
-    // 1. 간단한 유효성 검사
     if (formData.password !== formData.confirmPassword) {
       alert("비밀번호가 일치하지 않습니다.");
       return;
     }
 
-    // 2. 가짜 회원가입 처리 (Local Storage에 저장)
-    // 실제로는 여기서 백엔드 API (POST /api/members)를 호출해야 함
-    const newUser = {
-      email: formData.email,
-      password: formData.password,
-      name: formData.name
-    };
+    try {
+      // 백엔드 API 호출
+      const response = await axios.post('/signup', {
+        member_id: formData.email,
+        password: formData.password,
+        name: formData.name,
+        contact: "010-0000-0000", // 전화번호 입력 필드가 없어서 기본값 전송
+        type: "USER"
+      });
 
-    localStorage.setItem('registeredUser', JSON.stringify(newUser)); // 브라우저에 임시 저장
-
-    alert(`${formData.name}님, 회원가입이 완료되었습니다! 로그인해주세요.`);
-    navigate('/login'); // 로그인 페이지로 이동
+      if (response.status === 200) {
+        alert(`${formData.name}님, 회원가입이 완료되었습니다! 로그인해주세요.`);
+        navigate('/login'); 
+      }
+    } catch (error) {
+      console.error("회원가입 에러:", error);
+      const errorMessage = error.response?.data?.detail || "회원가입에 실패했습니다.";
+      alert(errorMessage);
+    }
   };
 
   return (

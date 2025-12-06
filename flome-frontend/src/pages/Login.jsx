@@ -1,32 +1,32 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogIn, Mail, Lock } from 'lucide-react';
+import axios from '../api/axios';
 
 const Login = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
-    // 1. Local Storage에 저장된 회원정보 가져오기
-    const storedUser = JSON.parse(localStorage.getItem('registeredUser'));
+    try {
+      const response = await axios.post('/login', {
+        email: email,
+        password: password
+      });
 
-    // 2. 정보 비교 (가짜 로그인 로직)
-    // 테스트용 계정: test@test.com / 1234 도 가능하게 설정
-    if (
-      (email === 'test@test.com' && password === '1234') || 
-      (storedUser && storedUser.email === email && storedUser.password === password)
-    ) {
       // 로그인 성공 처리
-      const userInfo = storedUser ? storedUser : { name: '테스트유저', email: 'test@test.com' };
-      localStorage.setItem('currentUser', JSON.stringify(userInfo)); // 현재 로그인한 사람 저장
+      // 백엔드에서 받은 Member 정보를 그대로 저장
+      localStorage.setItem('currentUser', JSON.stringify(response.data)); 
       
-      alert(`${userInfo.name}님 환영합니다!`);
+      alert(`${response.data.name}님 환영합니다!`);
       navigate('/'); // 메인으로 이동
-    } else {
-      alert("아이디 또는 비밀번호가 일치하지 않습니다.");
+    } catch (error) {
+      console.error("로그인 에러:", error);
+      const errorMessage = error.response?.data?.detail || "아이디 또는 비밀번호가 일치하지 않습니다.";
+      alert(errorMessage);
     }
   };
 
