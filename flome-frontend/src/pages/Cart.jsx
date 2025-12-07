@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, Trash2, Minus, Plus, Clock, Truck, Package, Store } from 'lucide-react';
 import axios from '../api/axios';
 
 const Cart = () => {
   const navigate = useNavigate();
   const [cartItems, setCartItems] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [myBalance, setMyBalance] = useState(0); // 잔액 상태
+  const [myBalance, setMyBalance] = useState(0); 
+  
+  // 수령 방법 및 시간 상태
+  const [deliveryMethod, setDeliveryMethod] = useState('pickup'); // pickup | delivery | box
+  const [reservationDate, setReservationDate] = useState(new Date().toISOString().slice(0, 16)); // YYYY-MM-DDTHH:mm
 
   useEffect(() => {
+    // ... (기존 로직 동일)
     // 장바구니 불러오기
     const savedCart = localStorage.getItem('cart');
     if (savedCart) setCartItems(JSON.parse(savedCart));
@@ -22,14 +27,11 @@ const Cart = () => {
         setCurrentUser(user);
         
         try {
-          // 백엔드에서 최신 잔액 조회
           const response = await axios.get('/me', { 
             params: { member_id: user.member_id } 
           });
           setMyBalance(response.data.money);
         } catch (err) {
-          console.error("잔액 정보 로딩 실패:", err);
-          // 실패 시 로컬 정보라도 쓰거나 0원 처리
           setMyBalance(user.money || 0);
         }
       }
@@ -39,7 +41,7 @@ const Cart = () => {
   }, []);
 
   const totalPrice = cartItems.reduce((acc, item) => acc + (parseInt(item.price) || 0), 0);
-  const finalPrice = totalPrice;
+  const finalPrice = totalPrice; // 배달팁 로직은 생략
 
   const removeItem = (index) => {
     const newCart = cartItems.filter((_, i) => i !== index);
@@ -56,40 +58,25 @@ const Cart = () => {
   const handlePayment = async () => {
     if (cartItems.length === 0) return;
 
-    // 1. 로그인 확인
     if (!currentUser) {
         alert("로그인이 필요합니다!");
         navigate('/login');
         return;
     }
 
-    // 2. 잔액 확인 (프론트엔드 체크)
     if (myBalance < finalPrice) {
-        alert(`잔액이 부족합니다! 😱
-현재 잔액: ${myBalance.toLocaleString()}원
-필요 금액: ${finalPrice.toLocaleString()}원`);
+        alert(`잔액이 부족합니다! 😱\n현재 잔액: ${myBalance.toLocaleString()}원`);
         return;
     }
 
-    // 3. 데이터 가공
     const targetStoreId = cartItems[0].storeId;
-    const targetStoreName = cartItems[0].storeName;
-
     const targetItems = cartItems.filter(item => item.storeId === targetStoreId);
-    if (targetItems.length !== cartItems.length) {
-        if(!window.confirm(`"${targetStoreName}" 상품만 먼저 주문하시겠습니까?
-(다른 가게 상품은 제외됩니다)`)) {
-            return;
-        }
-    }
-
+    
+    // 수량 집계
     const itemsMap = {};
     targetItems.forEach(item => {
-        if (itemsMap[item.id]) {
-            itemsMap[item.id] += 1;
-        } else {
-            itemsMap[item.id] = 1;
-        }
+        if (itemsMap[item.id]) itemsMap[item.id] += 1;
+        else itemsMap[item.id] = 1;
     });
 
     const orderItems = Object.keys(itemsMap).map(productId => ({
@@ -97,21 +84,33 @@ const Cart = () => {
         quantity: itemsMap[productId]
     }));
 
-    // 4. API 호출
+    // 배달 요청사항 문자열 생성
+    let requestStr = "";
+    if (deliveryMethod === 'pickup') requestStr = `매장 픽업 / ${reservationDate.replace('T', ' ')}`;
+    else if (deliveryMethod === 'delivery') requestStr = "바로 배달 요청";
+    else if (deliveryMethod === 'box') requestStr = `무인 픽업함 / ${reservationDate.replace('T', ' ')}`;
+
     try {
+        // AI 데이터 확인
+        const pendingAiDataStr = localStorage.getItem('pending_ai_data');
+        let aiPayload = {};
+        if (pendingAiDataStr) {
+            aiPayload = JSON.parse(pendingAiDataStr);
+        }
+
         const response = await axios.post('/orders', {
             store_id: targetStoreId,
             member_id: currentUser.member_id,
-            items: orderItems
+            items: orderItems,
+            delivery_request: requestStr, // 요청사항 추가
+            ...aiPayload 
         });
 
         if (response.status === 200) {
-            alert(`주문이 완료되었습니다! 🌸
-주문번호: ${response.data.order_id.substring(0, 8)}...
-남은 잔액: ${(myBalance - finalPrice).toLocaleString()}원`);
-            
+            alert(`주문이 완료되었습니다! 🌸\n수령 방법: ${requestStr}`);
             clearCart();
-            navigate('/'); 
+            localStorage.removeItem('pending_ai_data');
+            navigate('/mypage'); // 주문 내역 확인을 위해 마이페이지로 이동
         }
     } catch (error) {
         console.error("주문 실패:", error);
@@ -131,7 +130,7 @@ const Cart = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-gray-50 pb-32">
       <div className="bg-white sticky top-0 z-50 px-4 h-14 flex items-center justify-between border-b border-gray-100">
         <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft className="w-6 h-6 text-gray-800" /></button>
         <h1 className="text-lg font-bold text-gray-900">장바구니</h1>
@@ -139,16 +138,16 @@ const Cart = () => {
       </div>
 
       <div className="p-4 space-y-4">
-        {/* 잔액 표시 배너 */}
+        {/* 잔액 표시 */}
         <div className="bg-gray-800 text-white p-4 rounded-xl flex justify-between items-center shadow-md">
             <span className="font-bold text-sm">내 FloMe Pay 잔액</span>
             <span className="font-bold text-pink-400">{myBalance.toLocaleString()}원</span>
         </div>
 
+        {/* 상품 목록 */}
         <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
           <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-             <h2 className="font-bold text-gray-800">{cartItems[0]?.storeName || "가게 이름"}</h2>
-             <span className="text-xs text-pink-500 font-bold">배달팁 무료</span>
+             <h2 className="font-bold text-gray-800">{cartItems[0]?.storeName}</h2>
           </div>
           <div>
             {cartItems.map((item, index) => (
@@ -163,8 +162,50 @@ const Cart = () => {
           </div>
         </div>
 
+        {/* 🌟 수령 방법 선택 UI */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-4">
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-pink-500" /> 수령 방법 선택
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+                <button 
+                    onClick={() => setDeliveryMethod('pickup')}
+                    className={`py-3 rounded-xl border font-bold text-sm flex flex-col items-center gap-1 transition ${deliveryMethod === 'pickup' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-gray-200 text-gray-500'}`}
+                >
+                    <Store className="w-5 h-5" /> 매장 픽업
+                </button>
+                <button 
+                    onClick={() => setDeliveryMethod('delivery')}
+                    className={`py-3 rounded-xl border font-bold text-sm flex flex-col items-center gap-1 transition ${deliveryMethod === 'delivery' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-gray-200 text-gray-500'}`}
+                >
+                    <Truck className="w-5 h-5" /> 바로 배달
+                </button>
+                <button 
+                    onClick={() => setDeliveryMethod('box')}
+                    className={`py-3 rounded-xl border font-bold text-sm flex flex-col items-center gap-1 transition ${deliveryMethod === 'box' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-gray-200 text-gray-500'}`}
+                >
+                    <Package className="w-5 h-5" /> 무인함
+                </button>
+            </div>
+
+            {/* 시간 선택 (배달 제외) */}
+            {deliveryMethod !== 'delivery' && (
+                <div className="animate-in fade-in slide-in-from-top-2">
+                    <label className="text-xs font-bold text-gray-500 block mb-1">예약 시간</label>
+                    <input 
+                        type="datetime-local" 
+                        value={reservationDate}
+                        onChange={(e) => setReservationDate(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                    />
+                </div>
+            )}
+        </div>
+
+        {/* 결제 금액 */}
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 space-y-2">
           <div className="flex justify-between text-sm"><span className="text-gray-500">총 주문금액</span><span className="font-bold">{totalPrice.toLocaleString()}원</span></div>
+          {deliveryMethod === 'delivery' && <div className="flex justify-between text-sm"><span className="text-gray-500">배달팁</span><span className="font-bold text-pink-500">무료 (이벤트)</span></div>}
           <div className="border-t border-gray-100 my-2 pt-2 flex justify-between text-lg font-bold text-gray-900"><span>결제예정금액</span><span className="text-pink-500">{finalPrice.toLocaleString()}원</span></div>
         </div>
       </div>

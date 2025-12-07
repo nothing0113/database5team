@@ -1,101 +1,218 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Package, ClipboardList, CheckCircle, 
-  RefreshCw, User, Trash2, Plus, X, Edit2, Loader2 
+  RefreshCw, User, Trash2, Plus, X, Edit2, Loader2, Gift,
+  ToggleLeft, ToggleRight, Clock, MapPin, Store as StoreIcon
 } from 'lucide-react';
+import api from '../api/axios';
 
 const Admin = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('stock'); // stock | orders | dash
+  const [activeTab, setActiveTab] = useState('stock'); // stock | products | orders | info | dash
   
-  // 🌟 상태 관리 추가
-  const [isLoading, setIsLoading] = useState(false); // 새로고침 로딩 상태
-  const [isModalOpen, setIsModalOpen] = useState(false); // 입고 등록 모달 상태
+  const [isLoading, setIsLoading] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // 입고 등록 폼 데이터
+  const [currentUser, setCurrentUser] = useState(null);
+  const [myStore, setMyStore] = useState(null);
+
+  // 데이터 상태
+  const [stocks, setStocks] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [knownFlowers, setKnownFlowers] = useState([]);
+
+  // 폼 데이터
   const [newStock, setNewStock] = useState({
     name: '',
     qty: '',
-    date: new Date().toISOString().split('T')[0] // 오늘 날짜 기본값
+    date: new Date().toISOString().split('T')[0]
+  });
+  const [newProduct, setNewProduct] = useState({
+    name: '',
+    price: ''
+  });
+  const [storeForm, setStoreForm] = useState({ // 가게 정보 수정 폼
+    name: '',
+    address: '',
+    business_hours: '',
+    has_pickup_box: false
   });
 
-  // 1. 재고 데이터 (초기값)
-  const [stocks, setStocks] = useState([
-    { id: 1, name: "빨간 장미", inputDate: "2025-12-06", qty: 50 },
-    { id: 2, name: "화이트 튤립", inputDate: "2025-12-03", qty: 20 },
-    { id: 3, name: "안개꽃", inputDate: "2025-11-28", qty: 5 }, 
-  ]);
+  // 초기화
+  useEffect(() => {
+    const userStr = localStorage.getItem('currentUser');
+    if (!userStr) {
+      alert("로그인이 필요합니다.");
+      navigate('/login');
+      return;
+    }
+    const user = JSON.parse(userStr);
+    setCurrentUser(user);
 
-  const [orders, setOrders] = useState([
-    { id: 101, customer: "홍길동", item: "로맨틱 장미 10송이", price: 35000, status: "접수대기", time: "10분 전" },
-    { id: 102, customer: "김철수", item: "튤립 믹스", price: 28000, status: "준비중", time: "30분 전" },
-  ]);
+    fetchMyStore(user.member_id);
+    fetchKnownFlowers();
+  }, []);
 
-  // --- 🌟 기능 구현부 ---
+  useEffect(() => {
+    if (myStore) {
+        setStoreForm({
+            name: myStore.name,
+            address: myStore.address,
+            business_hours: myStore.business_hours || '',
+            has_pickup_box: myStore.has_pickup_box
+        });
+    }
+  }, [myStore]);
 
-  // 1. 신선도 계산 (자동 배지)
+  const fetchMyStore = async (memberId) => {
+    try {
+      const response = await api.get('/stores');
+      const myOwnStore = response.data.find(store => store.owner_id === memberId);
+      
+      if (myOwnStore) {
+        setMyStore(myOwnStore);
+        fetchStocks(myOwnStore.store_id);
+        fetchProducts(myOwnStore.store_id);
+        fetchOrders(myOwnStore.store_id);
+      } else {
+        alert("등록된 가게가 없습니다.");
+        navigate('/');
+      }
+    } catch (error) {
+      console.error("가게 정보 로딩 실패:", error);
+    }
+  };
+
+  const fetchStocks = async (storeId) => {
+    setIsLoading(true);
+    try {
+      const response = await api.get(`/stores/${storeId}/stocks`);
+      setStocks(response.data);
+    } catch (error) {
+      console.error("재고 로딩 실패:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchProducts = async (storeId) => {
+    try {
+      const response = await api.get(`/stores/${storeId}/products`);
+      setProducts(response.data);
+    } catch (error) {
+      console.error("상품 로딩 실패:", error);
+    }
+  };
+
+  const fetchOrders = async (storeId) => {
+    try {
+      const response = await api.get('/owner/orders', { params: { store_id: storeId } });
+      setOrders(response.data);
+    } catch (error) {
+      console.error("주문 로딩 실패:", error);
+    }
+  };
+
+  const fetchKnownFlowers = async () => {
+    try {
+      const response = await api.get('/flowers');
+      setKnownFlowers(response.data);
+    } catch (error) {
+      console.error("꽃 목록 로딩 실패:", error);
+    }
+  };
+
+  const handleRefresh = () => {
+    if (myStore) {
+      fetchStocks(myStore.store_id);
+      fetchProducts(myStore.store_id);
+      fetchOrders(myStore.store_id);
+      alert("업데이트 완료");
+    }
+  };
+
+  // --- 핸들러 ---
+
+  const handleAddStock = async (e) => {
+    e.preventDefault();
+    if (!newStock.name || !newStock.qty) return;
+    try {
+      await api.post('/stocks', {
+        store_id: myStore.store_id,
+        flower_name: newStock.name,
+        quantity: parseInt(newStock.qty),
+        input_date: new Date(newStock.date).toISOString()
+      });
+      alert("입고 등록 완료!");
+      setIsModalOpen(false);
+      setNewStock({ name: '', qty: '', date: new Date().toISOString().split('T')[0] });
+      fetchStocks(myStore.store_id);
+    } catch (error) {
+      alert("등록 실패");
+    }
+  };
+
+  const handleAddProduct = async (e) => {
+    e.preventDefault();
+    if (!newProduct.name || !newProduct.price) return;
+    try {
+      await api.post('/products', {
+        store_id: myStore.store_id,
+        name: newProduct.name,
+        price: parseInt(newProduct.price),
+        type: "READY_MADE"
+      });
+      alert("상품 등록 완료!");
+      setIsModalOpen(false);
+      setNewProduct({ name: '', price: '' });
+      fetchProducts(myStore.store_id);
+    } catch (error) {
+      console.error(error);
+      alert("상품 등록 실패");
+    }
+  };
+
+  const handleDeleteStock = async (id, name) => {
+    if (window.confirm(`'${name}' 재고를 삭제하시겠습니까?`)) {
+      await api.delete(`/stocks/${id}`);
+      fetchStocks(myStore.store_id);
+    }
+  };
+
+  const updateOrderStatus = async (id, newStatus) => {
+    await api.put(`/orders/${id}/status`, { status: newStatus });
+    fetchOrders(myStore.store_id);
+  };
+
+  const handleUpdateStore = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/stores/${myStore.store_id}`, storeForm);
+      alert("가게 정보가 업데이트되었습니다!");
+      fetchMyStore(currentUser.member_id); // 최신 정보 다시 불러오기
+    } catch (error) {
+      console.error("가게 정보 업데이트 실패:", error);
+      alert("가게 정보 업데이트에 실패했습니다.");
+    }
+  };
+
+  // 신선도 배지 헬퍼
   const getFreshnessStatus = (dateStr) => {
-    const today = new Date("2025-12-06"); // 테스트 기준일
+    if (!dateStr) return { label: "알수없음", color: "bg-gray-100 text-gray-600", border: "border-gray-200" };
+    const today = new Date();
     const input = new Date(dateStr);
     const diffTime = Math.abs(today - input);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-
     if (diffDays > 5) return { label: "폐기대상", color: "bg-red-100 text-red-600", border: "border-red-200" };
     if (diffDays > 3) return { label: "할인권장", color: "bg-orange-100 text-orange-600", border: "border-orange-200" };
     return { label: "신선함", color: "bg-green-100 text-green-600", border: "border-green-200" };
   };
 
-  // 2. 새로고침 기능
-  const handleRefresh = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      alert("최신 재고 정보를 불러왔습니다!");
-    }, 1000); // 1초 뒤 완료
-  };
-
-  // 3. 입고 등록 (추가) 기능
-  const handleAddStock = (e) => {
-    e.preventDefault();
-    if (!newStock.name || !newStock.qty) return;
-
-    const newItem = {
-      id: Date.now(), // 고유 ID 생성
-      name: newStock.name,
-      inputDate: newStock.date,
-      qty: parseInt(newStock.qty)
-    };
-
-    setStocks([newItem, ...stocks]); // 목록 맨 앞에 추가
-    setIsModalOpen(false); // 모달 닫기
-    setNewStock({ name: '', qty: '', date: new Date().toISOString().split('T')[0] }); // 폼 초기화
-    alert(`${newItem.name} 입고 등록 완료!`);
-  };
-
-  // 4. 폐기 (삭제) 기능
-  const handleDeleteStock = (id, name) => {
-    if (window.confirm(`'${name}' 재고를 폐기(삭제)하시겠습니까?`)) {
-      setStocks(stocks.filter(item => item.id !== id));
-    }
-  };
-
-  // 5. 수량 변경 기능
-  const handleEditQty = (id, currentQty) => {
-    const newQty = prompt("변경할 수량을 입력하세요:", currentQty);
-    if (newQty !== null && !isNaN(newQty)) {
-      setStocks(stocks.map(item => 
-        item.id === id ? { ...item, qty: parseInt(newQty) } : item
-      ));
-    }
-  };
-
-  // 6. 주문 상태 변경
-  const updateOrderStatus = (id, newStatus) => {
-    setOrders(orders.map(order => 
-      order.id === id ? { ...order, status: newStatus } : order
-    ));
-  };
+  if (!currentUser || !myStore) {
+    return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin w-8 h-8 text-blue-600"/></div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 relative">
@@ -104,79 +221,57 @@ const Admin = () => {
       <div className="bg-blue-600 p-4 text-white sticky top-0 z-40 shadow-md">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold">점주 관리자 모드</h1>
-            <span className="bg-blue-500 px-2 py-0.5 rounded text-xs">플로미 강남점</span>
+            <h1 className="text-xl font-bold">점주 관리자</h1>
+            <span className="bg-blue-500 px-2 py-0.5 rounded text-xs">{myStore.name}</span>
           </div>
-          <button 
-            onClick={() => navigate('/mypage')}
-            className="flex items-center gap-1 text-sm bg-white/20 px-3 py-1.5 rounded-full hover:bg-white/30 transition"
-          >
-            <User className="w-4 h-4" />
-            구매자 모드 전환
+          <button onClick={() => navigate('/mypage')} className="flex items-center gap-1 text-sm bg-white/20 px-3 py-1.5 rounded-full hover:bg-white/30 transition">
+            <User className="w-4 h-4" /> 마이페이지
           </button>
         </div>
 
         {/* 탭 메뉴 */}
-        <div className="flex bg-blue-700/50 p-1 rounded-xl">
-          <button onClick={() => setActiveTab('stock')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${activeTab === 'stock' ? 'bg-white text-blue-600 shadow-sm' : 'text-blue-100 hover:bg-white/10'}`}>재고 관리</button>
-          <button onClick={() => setActiveTab('orders')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${activeTab === 'orders' ? 'bg-white text-blue-600 shadow-sm' : 'text-blue-100 hover:bg-white/10'}`}>주문 접수</button>
-          <button onClick={() => setActiveTab('dash')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition ${activeTab === 'dash' ? 'bg-white text-blue-600 shadow-sm' : 'text-blue-100 hover:bg-white/10'}`}>대시보드</button>
+        <div className="flex bg-blue-700/50 p-1 rounded-xl overflow-x-auto">
+          {['stock', 'products', 'orders', 'info', 'dash'].map(tab => (
+            <button 
+              key={tab}
+              onClick={() => setActiveTab(tab)} 
+              className={`flex-1 py-2 px-3 text-sm font-bold rounded-lg transition whitespace-nowrap ${activeTab === tab ? 'bg-white text-blue-600 shadow-sm' : 'text-blue-100 hover:bg-white/10'}`}
+            >
+              {tab === 'stock' ? '원자재(꽃)' : tab === 'products' ? '판매상품' : tab === 'orders' ? '주문접수' : tab === 'info' ? '가게정보' : '대시보드'}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="p-4">
         
-        {/* === 1. 재고 관리 탭 === */}
+        {/* === 1. 원자재(Stock) 탭 === */}
         {activeTab === 'stock' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
                <div className="flex items-center gap-2">
-                 <h2 className="font-bold text-gray-800 text-lg">실시간 재고</h2>
-                 <button onClick={handleRefresh} className="p-1.5 bg-gray-200 rounded-full hover:bg-gray-300 transition">
-                    <RefreshCw className={`w-4 h-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} />
-                 </button>
+                 <h2 className="font-bold text-gray-800 text-lg">꽃 재고</h2>
+                 <button onClick={handleRefresh} className="p-1.5 bg-gray-200 rounded-full hover:bg-gray-300 transition"><RefreshCw className={`w-4 h-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} /></button>
                </div>
-               <button 
-                 onClick={() => setIsModalOpen(true)}
-                 className="bg-blue-600 text-white text-xs px-3 py-2 rounded-lg font-bold hover:bg-blue-700 flex items-center gap-1 shadow-sm transition transform active:scale-95"
-               >
-                 <Plus className="w-4 h-4" /> 입고 등록
+               <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white text-xs px-3 py-2 rounded-lg font-bold hover:bg-blue-700 flex items-center gap-1 shadow-sm">
+                 <Plus className="w-4 h-4" /> 입고
                </button>
             </div>
-
+            {stocks.length === 0 && <p className="text-center text-gray-400 py-5">등록된 꽃 재고가 없습니다.</p>}
             {stocks.map((item) => {
-              const status = getFreshnessStatus(item.inputDate);
+              const status = getFreshnessStatus(item.stocking_date);
               return (
-                <div key={item.id} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${status.border} ${status.border.replace('border', 'border-l')}`}>
+                <div key={item.stock_id} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${status.border} ${status.border.replace('border', 'border-l')}`}>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${status.color}`}>
-                        {status.label}
-                      </span>
-                      <h3 className="font-bold text-gray-900">{item.name}</h3>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${status.color}`}>{status.label}</span>
+                      <h3 className="font-bold text-gray-900">{item.flower ? item.flower.name : "이름 없음"}</h3>
                     </div>
-                    <div className="text-xs text-gray-500 flex items-center gap-2">
-                       <span>입고: {item.inputDate}</span>
-                       <span className="text-gray-300">|</span>
-                       <span className="font-bold text-gray-700">수량: {item.qty}개</span>
-                    </div>
+                    <div className="text-xs text-gray-500">수량: {item.quantity} | 입고: {new Date(item.stocking_date).toLocaleDateString()}</div>
                   </div>
-                  
                   <div className="flex gap-2">
-                    {/* 수량 변경 버튼 */}
-                    <button 
-                      onClick={() => handleEditQty(item.id, item.qty)}
-                      className="p-2 bg-gray-100 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition"
-                    >
-                      <Edit2 className="w-4 h-4"/>
-                    </button>
-                    {/* 폐기 버튼 */}
-                    <button 
-                      onClick={() => handleDeleteStock(item.id, item.name)}
-                      className="p-2 bg-red-50 rounded-lg text-red-400 hover:bg-red-100 hover:text-red-600 transition"
-                    >
-                      <Trash2 className="w-4 h-4"/>
-                    </button>
+                    <button onClick={() => handleEditQty(item.stock_id, item.quantity)} className="p-2 bg-gray-100 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition"><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={() => handleDeleteStock(item.stock_id, item.flower?.name)} className="p-2 bg-red-50 rounded-lg text-red-400 hover:bg-red-100"><Trash2 className="w-4 h-4"/></button>
                   </div>
                 </div>
               );
@@ -185,103 +280,178 @@ const Admin = () => {
           </div>
         )}
 
-        {/* === 2. 주문 접수 탭 === */}
-        {activeTab === 'orders' && (
+        {/* === 2. 판매상품(Products) 탭 === */}
+        {activeTab === 'products' && (
           <div className="space-y-4">
-            <h2 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-              주문 목록 <span className="bg-blue-100 text-blue-600 px-2 rounded-full text-sm">{orders.length}</span>
-            </h2>
-            {orders.map((order) => (
-              <div key={order.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                <div className="flex justify-between items-start mb-3">
+            <div className="flex justify-between items-center">
+               <h2 className="font-bold text-gray-800 text-lg">판매 상품</h2>
+               <button onClick={() => setIsModalOpen(true)} className="bg-pink-500 text-white text-xs px-3 py-2 rounded-lg font-bold hover:bg-pink-600 flex items-center gap-1 shadow-sm">
+                 <Plus className="w-4 h-4" /> 상품 등록
+               </button>
+            </div>
+            {products.length === 0 && <p className="text-center text-gray-400 py-10">등록된 상품이 없습니다.</p>}
+            {products.map((product) => (
+              <div key={product.product_id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-pink-100 rounded-lg flex items-center justify-center text-pink-500"><Gift className="w-5 h-5"/></div>
                   <div>
-                    <span className="text-xs font-bold text-gray-400 mb-1 block">{order.time}</span>
-                    <h3 className="font-bold text-lg text-gray-900">{order.item}</h3>
-                    <p className="text-sm text-gray-500">{order.customer} 고객님</p>
+                    <h3 className="font-bold text-gray-900">{product.name}</h3>
+                    <p className="text-sm text-gray-500">{product.price.toLocaleString()}원</p>
                   </div>
-                  <span className="font-bold text-lg">{order.price.toLocaleString()}원</span>
                 </div>
-                <div className="flex gap-2 mt-4">
-                  {order.status === "접수대기" ? (
-                    <>
-                      <button className="flex-1 py-3 bg-gray-100 rounded-lg font-bold text-gray-500 hover:bg-gray-200">거절</button>
-                      <button onClick={() => updateOrderStatus(order.id, "준비중")} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 animate-pulse">주문 수락</button>
-                    </>
-                  ) : order.status === "준비중" ? (
-                     <button onClick={() => updateOrderStatus(order.id, "완료")} className="w-full py-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 flex items-center justify-center gap-2"><CheckCircle className="w-5 h-5"/> 완료 처리</button>
-                  ) : (
-                    <div className="w-full py-3 bg-gray-100 text-gray-400 font-bold rounded-lg text-center">거래 완료됨</div>
-                  )}
-                </div>
+                <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500">{product.type === 'READY_MADE' ? '완제품' : '커스텀'}</span>
               </div>
             ))}
           </div>
         )}
 
-        {/* === 3. 대시보드 탭 === */}
-        {activeTab === 'dash' && (
+        {/* === 3. 주문 탭 === */}
+        {activeTab === 'orders' && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                <p className="text-gray-500 text-sm mb-1">오늘 매출</p>
-                <h3 className="text-2xl font-bold text-blue-600">63,000원</h3>
-              </div>
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                <p className="text-gray-500 text-sm mb-1">주문 건수</p>
-                <h3 className="text-2xl font-bold text-gray-800">2건</h3>
-              </div>
-            </div>
+            <h2 className="font-bold text-gray-800 text-lg">주문 내역 <span className="text-blue-600 text-sm ml-1">{orders.length}</span></h2>
+            {orders.length === 0 && <p className="text-center text-gray-400 py-5">받은 주문이 없습니다.</p>}
+            {orders.map((order) => {
+                const itemName = order.items.length > 0 ? (order.items[0].product ? order.items[0].product.name : "상품 정보 없음") : "상품 없음";
+                const totalPrice = order.items.reduce((acc, i) => acc + (i.snapshot_price * i.quantity), 0);
+                return (
+                  <div key={order.order_id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between mb-3">
+                      <div>
+                        <span className="text-xs font-bold text-gray-400 block mb-1">{new Date(order.order_date).toLocaleString()}</span>
+                        <h3 className="font-bold text-lg text-gray-900">{itemName}</h3>
+                        {order.ai_content && <div className="mt-1 text-xs bg-pink-50 text-pink-600 p-1 rounded px-2">🌸 AI 요청: {order.ai_content.user_prompt}</div>}
+                      </div>
+                      <span className="font-bold text-lg">{totalPrice.toLocaleString()}원</span>
+                    </div>
+                    {order.status === 'PAID' && <button onClick={() => updateOrderStatus(order.order_id, "PREPARING")} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold">주문 수락</button>}
+                    {order.status === 'PREPARING' && <button onClick={() => updateOrderStatus(order.order_id, "PICKED_UP")} className="w-full py-3 bg-green-500 text-white rounded-lg font-bold">픽업 완료 처리</button>}
+                    {order.status === 'PICKED_UP' && <div className="text-center text-gray-400 font-bold py-2">거래 완료</div>}
+                  </div>
+                );
+            })}
           </div>
         )}
+        
+        {/* === 4. 가게 정보 탭 === */}
+        {activeTab === 'info' && (
+            <div className="space-y-4">
+                <h2 className="font-bold text-gray-800 text-lg mb-4">내 가게 정보</h2>
+                <form onSubmit={handleUpdateStore} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label className="text-sm font-bold text-gray-700 block mb-1">가게 이름</label>
+                        <div className="relative">
+                            <StoreIcon className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                            <input 
+                                type="text" 
+                                name="name"
+                                value={storeForm.name}
+                                onChange={(e) => setStoreForm({...storeForm, name: e.target.value})}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-sm font-bold text-gray-700 block mb-1">가게 주소</label>
+                        <div className="relative">
+                            <MapPin className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                            <input 
+                                type="text" 
+                                name="address"
+                                value={storeForm.address}
+                                onChange={(e) => setStoreForm({...storeForm, address: e.target.value})}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-sm font-bold text-gray-700 block mb-1">영업 시간</label>
+                        <div className="relative">
+                            <Clock className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                            <input 
+                                type="text" 
+                                name="business_hours"
+                                value={storeForm.business_hours}
+                                onChange={(e) => setStoreForm({...storeForm, business_hours: e.target.value})}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="예: 09:00 - 20:00"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-sm font-bold text-gray-700 block mb-1">무인 픽업함</label>
+                        <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <span className="flex-1">무인 픽업함 사용 여부</span>
+                            <button 
+                                type="button" 
+                                onClick={() => setStoreForm({...storeForm, has_pickup_box: !storeForm.has_pickup_box})}
+                                className={`relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${storeForm.has_pickup_box ? 'bg-blue-600' : 'bg-gray-200'}`}
+                            >
+                                <span className={`pointer-events-none relative inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200 ${storeForm.has_pickup_box ? 'translate-x-5' : 'translate-x-0'}`}>
+                                    <span className={`absolute inset-0 h-full w-full flex items-center justify-center transition-opacity ${storeForm.has_pickup_box ? 'opacity-0 ease-out duration-100' : 'opacity-100 ease-in duration-200'}`} aria-hidden="true">
+                                        <ToggleLeft className="w-4 h-4 text-gray-400" />
+                                    </span>
+                                    <span className={`absolute inset-0 h-full w-full flex items-center justify-center transition-opacity ${storeForm.has_pickup_box ? 'opacity-100 ease-in duration-200' : 'opacity-0 ease-out duration-100'}`} aria-hidden="true">
+                                        <ToggleRight className="w-4 h-4 text-blue-600" />
+                                    </span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl mt-4 transition">
+                        가게 정보 업데이트
+                    </button>
+                </form>
+            </div>
+        )}
+
+        {/* === 5. 대시보드 탭 === */}
+        {activeTab === 'dash' && (
+            <div className="text-center text-gray-400 py-20">대시보드 준비 중...</div>
+        )}
+
       </div>
 
-      {/* 🌟 [모달] 입고 등록 팝업 */}
+      {/* 🌟 공용 모달 (탭에 따라 내용 변경) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-900">새 꽃 입고 등록</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                {activeTab === 'stock' ? '새 꽃 입고 등록' : '새 상품 등록'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6"/></button>
             </div>
             
-            <form onSubmit={handleAddStock} className="space-y-4">
-              <div>
-                <label className="text-sm font-bold text-gray-700 block mb-1">꽃 이름</label>
-                <input 
-                  type="text" 
-                  value={newStock.name}
-                  onChange={(e) => setNewStock({...newStock, name: e.target.value})}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="예: 노란 튤립"
-                  autoFocus
-                />
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="text-sm font-bold text-gray-700 block mb-1">수량 (송이)</label>
-                  <input 
-                    type="number" 
-                    value={newStock.qty}
-                    onChange={(e) => setNewStock({...newStock, qty: e.target.value})}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="0"
-                  />
+            {/* 원자재 등록 폼 */}
+            {activeTab === 'stock' && (
+              <form onSubmit={handleAddStock} className="space-y-4">
+                <div>
+                  <label className="text-sm font-bold text-gray-700 block mb-1">꽃 이름</label>
+                  <input type="text" value={newStock.name} onChange={(e) => setNewStock({...newStock, name: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3" placeholder="예: 노란 튤립" list="flower-options" autoFocus />
+                  <datalist id="flower-options">{knownFlowers.map((f) => <option key={f.flower_id} value={f.name} />)}</datalist>
                 </div>
-                <div className="flex-1">
-                  <label className="text-sm font-bold text-gray-700 block mb-1">입고일</label>
-                  <input 
-                    type="date" 
-                    value={newStock.date}
-                    onChange={(e) => setNewStock({...newStock, date: e.target.value})}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                <div className="flex gap-3">
+                  <div className="flex-1"><label className="text-sm font-bold text-gray-700 block mb-1">수량</label><input type="number" value={newStock.qty} onChange={(e) => setNewStock({...newStock, qty: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3" placeholder="0" /></div>
+                  <div className="flex-1"><label className="text-sm font-bold text-gray-700 block mb-1">입고일</label><input type="date" value={newStock.date} onChange={(e) => setNewStock({...newStock, date: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3" /></div>
                 </div>
-              </div>
-              
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl mt-4 transition">
-                등록하기
-              </button>
-            </form>
+                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl mt-4">등록하기</button>
+              </form>
+            )}
+
+            {/* 상품 등록 폼 */}
+            {activeTab === 'products' && (
+              <form onSubmit={handleAddProduct} className="space-y-4">
+                <div>
+                  <label className="text-sm font-bold text-gray-700 block mb-1">상품명</label>
+                  <input type="text" value={newProduct.name} onChange={(e) => setNewProduct({...newProduct, name: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3" placeholder="예: 졸업식 꽃다발" autoFocus />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700 block mb-1">가격</label>
+                  <input type="number" value={newProduct.price} onChange={(e) => setNewProduct({...newProduct, price: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3" placeholder="35000" />
+                </div>
+                <button type="submit" className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 rounded-xl mt-4">상품 등록하기</button>
+              </form>
+            )}
           </div>
         </div>
       )}

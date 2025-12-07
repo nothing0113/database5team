@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../api/axios';
 import { 
   ArrowLeft, Send, Sparkles, Flower2, Mail, Droplets, 
-  Thermometer, Sun, Sprout 
+  Thermometer, Sun, Sprout, MapPin, ShoppingBag, RefreshCw
 } from 'lucide-react';
 
 const Chat = () => {
@@ -10,78 +11,157 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState(''); // 로딩 메시지 상태 추가
   
-  // 초기 메시지
-  const [messages, setMessages] = useState([
-    { 
-      id: 1, 
-      sender: 'bot', 
-      type: 'text', 
-      content: "안녕하세요! FloMe AI 플로리스트입니다. 🌸\n현재 상황이나 전하고 싶은 마음을 말씀해 주시면, 딱 맞는 꽃과 편지를 추천해 드릴게요.\n(예: 여자친구와 헤어져서 마음을 전하고 싶어)" 
-    }
-  ]);
-
-  // 🌟 가짜 데이터 (Mock Data) - 백엔드에서 받을 예상 데이터
-  const MOCK_RESPONSE = {
-    title: "변치 않는 마음, 새로운 시작",
-    color_theme: "순수함과 진실된 마음을 담은 희망의 색감",
-    flowers: [
-      {
-        role: "메인",
-        name: "하얀 튤립",
-        reason: "헤어진 연인에게 새로운 시작을 제안하고 용서를 구하는 진심을 전달하기에 가장 적합합니다."
-      },
-      {
-        role: "서브",
-        name: "리시안셔스",
-        reason: "이별 후에도 변치 않는 사랑과 우아한 마음을 전하고 싶은 고객님의 깊은 마음을 표현합니다."
-      },
-      {
-        role: "소재",
-        name: "안개꽃",
-        reason: "맑고 순수한 마음으로 사랑의 성공을 다시 기원하며, 두 꽃을 더욱 풍성하게 감싸줍니다."
+  // 초기 메시지 (LocalStorage 연동)
+  const [messages, setMessages] = useState(() => {
+    const savedHistory = localStorage.getItem('chat_history');
+    return savedHistory ? JSON.parse(savedHistory) : [
+      { 
+        id: 1, 
+        sender: 'bot', 
+        type: 'text', 
+        content: "안녕하세요! FloMe AI 플로리스트입니다. 🌸\n현재 상황이나 전하고 싶은 마음을 말씀해 주시면, 딱 맞는 꽃과 편지를 추천해 드릴게요.\n(예: 여자친구와 헤어져서 마음을 전하고 싶어)" 
       }
-    ],
-    letter: "당신에게 진심으로 용서를 구합니다. 제 마음은 변함없이 당신을 향하고 있어요. 맑고 순수한 마음으로, 우리에게 새로운 시작과 사랑의 성공이 다시 찾아오기를 간절히 소망합니다.",
-    care_guide: [
-      "물을 매일 신선하게 갈아주어 꽃이 충분히 물을 흡수하도록 해주세요.",
-      "서늘한 곳에 보관하고 직사광선을 피하면 더욱 오래 감상할 수 있습니다.",
-      "줄기가 약한 꽃들이 있으니 조심스럽게 다루고, 시든 잎은 바로 제거해주세요."
-    ]
-  };
+    ];
+  });
+
+  // 메시지 변경 시 저장
+  useEffect(() => {
+    localStorage.setItem('chat_history', JSON.stringify(messages));
+    scrollToBottom();
+  }, [messages]);
 
   // 스크롤 자동 내리기
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // 대화 초기화
+  const handleReset = () => {
+    if (window.confirm("대화 내용을 모두 지우고 처음부터 시작할까요?")) {
+      localStorage.removeItem('chat_history');
+      setMessages([
+        { 
+          id: 1, 
+          sender: 'bot', 
+          type: 'text', 
+          content: "안녕하세요! FloMe AI 플로리스트입니다. 🌸\n현재 상황이나 전하고 싶은 마음을 말씀해 주시면, 딱 맞는 꽃과 편지를 추천해 드릴게요.\n(예: 여자친구와 헤어져서 마음을 전하고 싶어)" 
+        }
+      ]);
+    }
+  };
 
   // 메시지 전송 핸들러
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
 
     // 1. 유저 메시지 추가
     const userMessage = { id: Date.now(), sender: 'user', type: 'text', content: input };
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
+    setLoadingMessage("AI가 상황을 분석하고 있어요...");
 
-    // 2. (가짜) AI 응답 대기 시뮬레이션
-    setTimeout(() => {
-      // 3. 봇의 추천 카드 메시지 추가
-      const botResponse = {
+    try {
+      // 2. Fetch API로 스트리밍 요청 (Axios 대신 사용)
+      const response = await fetch(`http://localhost:8000/api/recommend?situation=${encodeURIComponent(currentInput)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.body) throw new Error("ReadableStream not supported.");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // 마지막 불완전한 라인은 버퍼에 유지
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          
+          try {
+            const data = JSON.parse(line);
+            
+            if (data.type === 'progress') {
+              setLoadingMessage(data.message);
+            } else if (data.type === 'result') {
+              const result = data.data;
+              // 3. 봇의 추천 카드 메시지 추가
+              const botResponse = {
+                id: Date.now() + 1,
+                sender: 'bot',
+                type: 'recommendation',
+                data: { ...result, original_prompt: currentInput }
+              };
+              setMessages(prev => [...prev, botResponse]);
+            }
+          } catch (parseError) {
+            console.error("JSON 파싱 에러:", parseError);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error("API Error:", error);
+      const errorMessage = {
         id: Date.now() + 1,
         sender: 'bot',
-        type: 'recommendation', // 타입이 'recommendation'이면 카드를 보여줌
-        data: MOCK_RESPONSE
+        type: 'text',
+        content: "죄송합니다. 꽃 추천을 가져오는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요."
       };
-      setMessages(prev => [...prev, botResponse]);
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500); // 1.5초 뒤에 응답
+      setLoadingMessage('');
+    }
+  };
+  const handleAddToCart = (store, aiData) => {
+    if (!store.product_id) {
+      alert("이 매장은 현재 온라인 주문 상품 정보가 없습니다. 매장으로 문의해주세요.");
+      return;
+    }
+
+    const newItem = {
+      id: store.product_id,
+      name: `[AI] ${aiData.title || '나만의 꽃다발'}`,
+      price: store.product_price || 0,
+      storeId: store.store_id,
+      storeName: store.name,
+      quantity: 1,
+      image: null // 이미지 없음
+    };
+
+    // 장바구니 로드 및 추가
+    const existingCart = JSON.parse(localStorage.getItem('cart') || '[]');
+    
+    // 다른 가게 상품이 있다면 비우고 담을지 물어보는 로직이 있으면 좋지만, 여기서는 일단 추가
+    // (Cart.jsx에서 결제 시 가게 체크함)
+    const updatedCart = [...existingCart, newItem];
+    localStorage.setItem('cart', JSON.stringify(updatedCart));
+
+    // AI 데이터 저장 (주문 시 전송용)
+    localStorage.setItem('pending_ai_data', JSON.stringify({
+      user_prompt: aiData.original_prompt,
+      letter_content: aiData.letter,
+      recipe: JSON.stringify(aiData.flowers), // 꽃 조합을 문자열로 저장
+      care_guide: aiData.care_guide
+    }));
+
+    if (window.confirm("장바구니에 상품을 담았습니다! 🛒\n장바구니로 이동하시겠습니까?")) {
+      navigate('/cart');
+    }
   };
 
   return (
@@ -101,6 +181,9 @@ const Chat = () => {
             <p className="text-xs text-gray-500">실시간 추천 중...</p>
           </div>
         </div>
+        <button onClick={handleReset} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full" title="대화 초기화">
+          <RefreshCw className="w-5 h-5" />
+        </button>
       </div>
 
       {/* 2. 메시지 리스트 영역 */}
@@ -140,7 +223,7 @@ const Chat = () => {
                       <Flower2 className="w-4 h-4 text-pink-500" /> 추천 구성
                     </h4>
                     <div className="space-y-2">
-                      {msg.data.flowers.map((flower, idx) => (
+                      {msg.data.flowers && msg.data.flowers.map((flower, idx) => (
                         <div key={idx} className="bg-pink-50/50 p-3 rounded-xl border border-pink-100">
                           <div className="flex justify-between items-center mb-1">
                             <span className="font-bold text-gray-800">{flower.name}</span>
@@ -170,7 +253,7 @@ const Chat = () => {
                       <Sprout className="w-4 h-4 text-green-500" /> 관리법
                     </h4>
                     <ul className="text-xs text-gray-600 space-y-1 bg-green-50/50 p-3 rounded-xl">
-                      {msg.data.care_guide.map((guide, idx) => (
+                      {Array.isArray(msg.data.care_guide) && msg.data.care_guide.map((guide, idx) => (
                         <li key={idx} className="flex gap-2">
                           <span className="text-green-500">•</span>
                           {guide}
@@ -179,10 +262,39 @@ const Chat = () => {
                     </ul>
                   </div>
                   
-                  {/* 버튼 영역 */}
-                  <button className="w-full bg-pink-500 text-white py-2 rounded-xl font-bold text-sm hover:bg-pink-600 transition shadow-sm mt-2">
-                    이 구성으로 주문하기
-                  </button>
+                  {/* 4. 주문 가능한 매장 (New) */}
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-1">
+                       <MapPin className="w-4 h-4 text-purple-500" /> 주문 가능한 매장
+                    </h4>
+                    {msg.data.available_stores && msg.data.available_stores.length > 0 ? (
+                      <div className="space-y-2">
+                        {msg.data.available_stores.map((store) => (
+                          <div key={store.store_id} className="bg-white border border-gray-200 p-3 rounded-xl flex justify-between items-center shadow-sm hover:border-pink-300 transition">
+                            <div className="flex-1 min-w-0 mr-2">
+                              <p className="font-bold text-sm text-gray-800 truncate">{store.name}</p>
+                              <p className="text-xs text-gray-500 truncate">{store.address}</p>
+                              {store.product_price && (
+                                <p className="text-xs text-pink-500 font-bold mt-1">예상가: {store.product_price.toLocaleString()}원</p>
+                              )}
+                            </div>
+                            <button 
+                              onClick={() => handleAddToCart(store, msg.data)}
+                              className="bg-pink-500 text-white text-xs px-3 py-2 rounded-lg hover:bg-pink-600 transition flex-shrink-0 flex items-center gap-1"
+                            >
+                              <ShoppingBag className="w-3 h-3" />
+                              담기
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500 bg-gray-100 p-3 rounded-xl text-center">
+                        현재 이 구성으로 주문 가능한 매장이 주변에 없습니다. 😢
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               )}
             </div>
@@ -195,10 +307,11 @@ const Chat = () => {
             <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center mr-2">
               <Sparkles className="w-5 h-5 text-pink-500" />
             </div>
-            <div className="bg-white border border-gray-100 px-4 py-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-1">
+            <div className="bg-white border border-gray-100 px-4 py-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2">
               <span className="w-2 h-2 bg-pink-300 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></span>
               <span className="w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
               <span className="w-2 h-2 bg-pink-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+              <span className="text-sm text-gray-700">{loadingMessage}</span>
             </div>
           </div>
         )}

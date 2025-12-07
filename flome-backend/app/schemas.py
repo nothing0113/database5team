@@ -33,6 +33,17 @@ class Member(MemberBase):
     class Config:
         orm_mode = True
 
+# --- Flower Schemas ---
+class Flower(BaseModel):
+    flower_id: UUID
+    name: str
+    meaning: Optional[str] = None
+    color: Optional[str] = None
+    care_guide: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
 # --- Product Schemas ---
 class ProductBase(BaseModel):
     name: str
@@ -45,6 +56,9 @@ class Product(ProductBase):
 
     class Config:
         orm_mode = True
+
+class ProductCreate(ProductBase):
+    store_id: UUID
 
 # --- Store Schemas (위로 올림, Order에서 쓰기 위해) ---
 class StoreBase(BaseModel):
@@ -60,6 +74,8 @@ class Store(StoreBase):
     store_id: UUID
     owner_id: str
     products: List[Product] = []
+    review_count: int = 0
+    average_rating: float = 0.0
 
     class Config:
         orm_mode = True
@@ -76,6 +92,11 @@ class OrderCreate(BaseModel):
     store_id: UUID
     member_id: str
     items: List[OrderItemCreate]
+    user_prompt: Optional[str] = None
+    letter_content: Optional[str] = None
+    recipe: Optional[str] = None
+    care_guide: Optional[List[str]] = None
+    delivery_request: Optional[str] = None # 배달 요청사항 추가
 
 class OrderItem(BaseModel):
     item_id: UUID
@@ -95,6 +116,7 @@ class Order(BaseModel):
     member_id: str
     status: str
     order_date: datetime
+    delivery_request: Optional[str] = None # 배달 요청사항 추가
     items: List[OrderItem] = []
     
     # 가게 정보 포함
@@ -115,3 +137,40 @@ class Review(ReviewBase):
 
     class Config:
         orm_mode = True
+
+class ReviewCreate(ReviewBase):
+    order_id: UUID
+
+# --- Owner Management Schemas ---
+class StockCreate(BaseModel):
+    store_id: UUID
+    flower_name: str
+    quantity: int
+    input_date: Optional[datetime] = None
+
+class StockUpdate(BaseModel):
+    quantity: int
+
+class OrderStatusUpdate(BaseModel):
+    status: str
+
+# --- AI Recommendation Schemas ---
+class RecommendedFlowerDetail(BaseModel):
+    role: str
+    name: str
+    reason: str
+
+class AvailableStoreInfo(BaseModel):
+    store_id: UUID
+    name: str
+    address: str
+    product_id: Optional[UUID] = None
+    product_price: Optional[int] = None
+
+class RecommendedBouquetResponse(BaseModel):
+    title: str
+    color_theme: str
+    flowers: List[RecommendedFlowerDetail]
+    letter: str
+    care_guide: List[str]
+    available_stores: List[AvailableStoreInfo]

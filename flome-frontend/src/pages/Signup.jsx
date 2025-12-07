@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { UserPlus, Mail, Lock, User } from 'lucide-react';
+import { UserPlus, Mail, Lock, User, Store, MapPin } from 'lucide-react';
 import axios from '../api/axios';
 
 const Signup = () => {
@@ -11,9 +11,18 @@ const Signup = () => {
     password: '',
     confirmPassword: ''
   });
+  const [isOwner, setIsOwner] = useState(false);
+  const [storeData, setStoreData] = useState({
+    name: '',
+    address: ''
+  });
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleStoreChange = (e) => {
+    setStoreData({ ...storeData, [e.target.name]: e.target.value });
   };
 
   const handleSignup = async (e) => {
@@ -24,18 +33,41 @@ const Signup = () => {
       return;
     }
 
+    if (isOwner && (!storeData.name || !storeData.address)) {
+      alert("가게 이름과 주소를 입력해주세요.");
+      return;
+    }
+
     try {
-      // 백엔드 API 호출
+      // 1. 회원가입 API 호출
       const response = await axios.post('/signup', {
         member_id: formData.email,
         password: formData.password,
         name: formData.name,
-        contact: "010-0000-0000", // 전화번호 입력 필드가 없어서 기본값 전송
-        type: "USER"
+        contact: "010-0000-0000",
+        type: isOwner ? "OWNER" : "USER"
       });
 
       if (response.status === 200) {
-        alert(`${formData.name}님, 회원가입이 완료되었습니다! 로그인해주세요.`);
+        // 2. 점주라면 가게 생성 API 호출
+        if (isOwner) {
+            try {
+                await axios.post('/stores', {
+                    owner_id: formData.email, // 방금 가입한 이메일
+                    name: storeData.name,
+                    address: storeData.address,
+                    business_hours: "09:00 - 20:00", // 기본값
+                    has_pickup_box: false
+                });
+            } catch (storeError) {
+                console.error("가게 생성 실패:", storeError);
+                alert("회원가입은 완료되었으나 가게 생성에 실패했습니다. 관리자에게 문의하세요.");
+                navigate('/login');
+                return;
+            }
+        }
+
+        alert(`${formData.name}님, ${isOwner ? '점주 ' : ''}회원가입이 완료되었습니다! 로그인해주세요.`);
         navigate('/login'); 
       }
     } catch (error) {
@@ -118,12 +150,52 @@ const Signup = () => {
             </div>
           </div>
 
+          {/* 🌟 점주 가입 여부 체크박스 */}
+          <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+            <label className="flex items-center gap-2 cursor-pointer mb-2">
+              <input 
+                type="checkbox" 
+                checked={isOwner}
+                onChange={(e) => setIsOwner(e.target.checked)}
+                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <span className="font-bold text-blue-800">꽃집 사장님(점주)이신가요?</span>
+            </label>
+            
+            {isOwner && (
+              <div className="space-y-3 mt-3 animate-in slide-in-from-top-2 fade-in">
+                <div className="relative">
+                   <Store className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                   <input
+                     name="name"
+                     type="text"
+                     placeholder="가게 이름 (예: 행복한 꽃집)"
+                     value={storeData.name}
+                     onChange={handleStoreChange}
+                     className="w-full pl-10 pr-4 py-3 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   />
+                </div>
+                <div className="relative">
+                   <MapPin className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                   <input
+                     name="address"
+                     type="text"
+                     placeholder="가게 주소 (예: 서울시 강남구)"
+                     value={storeData.address}
+                     onChange={handleStoreChange}
+                     className="w-full pl-10 pr-4 py-3 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   />
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="submit"
-            className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2"
+            className={`w-full font-bold py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2 ${isOwner ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-pink-500 hover:bg-pink-600 text-white'}`}
           >
             <UserPlus className="w-5 h-5" />
-            가입하기
+            {isOwner ? '점주로 가입하기' : '가입하기'}
           </button>
         </form>
 

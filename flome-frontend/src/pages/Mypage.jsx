@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, LogOut, Gift, Wallet, Store, ChevronRight, RefreshCw } from 'lucide-react';
+import { User, LogOut, Gift, Wallet, Store, ChevronRight, RefreshCw, Star, X, Edit3, CheckCircle } from 'lucide-react';
 import axios from '../api/axios';
 
 const MyPage = () => {
@@ -8,6 +8,14 @@ const MyPage = () => {
   const [user, setUser] = useState(null);
   const [balance, setBalance] = useState(0);
   const [orders, setOrders] = useState([]);
+  
+  // 리뷰 모달 상태
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewData, setReviewData] = useState({
+    orderId: null,
+    rating: 5,
+    content: ''
+  });
 
   useEffect(() => {
     let storedUser = null;
@@ -15,7 +23,6 @@ const MyPage = () => {
       storedUser = localStorage.getItem('currentUser');
     } catch (e) {
       console.error("스토리지 접근 제한:", e);
-      alert("브라우저 쿠키/스토리지 설정 문제로 로그인이 풀릴 수 있습니다.");
     }
     
     if (!storedUser) {
@@ -26,53 +33,67 @@ const MyPage = () => {
 
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
-
-    const fetchMyInfo = async () => {
-      try {
-        console.log("내 정보 요청 시작:", parsedUser.member_id);
-
-        // 1. 잔액 조회
-        const meRes = await axios.get('/me', { 
-            params: { member_id: parsedUser.member_id } 
-        });
-        console.log("잔액 조회 성공:", meRes.data);
-        setBalance(meRes.data.money);
-
-        // 2. 주문 내역 조회
-        const ordersRes = await axios.get('/orders', {
-            params: { member_id: parsedUser.member_id }
-        });
-        console.log("주문 내역 조회 성공:", ordersRes.data);
-        setOrders(ordersRes.data);
-
-      } catch (err) {
-        console.error("내 정보 로딩 실패 상세:", err);
-        // 에러 내용을 화면에 표시 (디버깅용)
-        // alert("정보 로딩 실패: " + (err.response?.data?.detail || err.message));
-        
-        // 실패 시 기본값 (0원)
-        setBalance(0); 
-      }
-    };
-
-    fetchMyInfo();
+    fetchMyInfo(parsedUser.member_id);
   }, [navigate]);
+
+  const fetchMyInfo = async (memberId) => {
+    try {
+      // 1. 잔액 조회
+      const meRes = await axios.get('/me', { params: { member_id: memberId } });
+      setBalance(meRes.data.money);
+
+      // 2. 주문 내역 조회
+      const ordersRes = await axios.get('/orders', { params: { member_id: memberId } });
+      setOrders(ordersRes.data);
+    } catch (err) {
+      console.error("정보 로딩 실패:", err);
+      setBalance(0); 
+    }
+  };
 
   const handleLogout = () => {
     try {
       localStorage.removeItem('currentUser');
       localStorage.removeItem('cart'); 
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
     alert("로그아웃 되었습니다.");
     navigate('/');
+  };
+
+  const openReviewModal = (orderId) => {
+    setReviewData({ orderId, rating: 5, content: '' });
+    setIsReviewModalOpen(true);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!reviewData.content.trim()) {
+      alert("리뷰 내용을 입력해주세요.");
+      return;
+    }
+
+    try {
+      await axios.post('/reviews', {
+        rating: reviewData.rating,
+        content: reviewData.content,
+        writer_id: user.member_id,
+        order_id: reviewData.orderId
+      });
+      
+      alert("리뷰가 등록되었습니다! 🌸");
+      setIsReviewModalOpen(false);
+      // 주문 목록 갱신 (리뷰 작성 여부 반영 등 필요한 경우)
+      fetchMyInfo(user.member_id);
+    } catch (error) {
+      console.error("리뷰 등록 실패:", error);
+      const msg = error.response?.data?.detail || "리뷰 등록 실패";
+      alert(msg);
+    }
   };
 
   if (!user) return null;
 
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-gray-50 pb-20">
+    <div className="min-h-[calc(100vh-64px)] bg-gray-50 pb-20 relative">
       
       {/* 프로필 영역 */}
       <div className="bg-white p-6 pb-8 rounded-b-[2rem] shadow-sm mb-6">
@@ -135,11 +156,7 @@ const MyPage = () => {
           </h3>
           
           {orders.length === 0 ? (
-            <div className="py-4 text-center text-gray-400 text-sm bg-gray-50 rounded-xl">
-               아직 주문 내역이 없어요 🌸
-               {/* 디버깅용 메시지: 주문이 진짜 없는 건지, 에러인지 확인 */}
-               {/* <br/><span className="text-xs text-red-300">(API 응답: 빈 배열)</span> */}
-            </div>
+            <div className="py-4 text-center text-gray-400 text-sm bg-gray-50 rounded-xl">아직 주문 내역이 없어요 🌸</div>
           ) : (
             <div className="space-y-4">
                 {orders.map((order) => (
@@ -161,7 +178,39 @@ const MyPage = () => {
                                 </div>
                             ))}
                         </div>
-                        <div className="border-t border-gray-100 pt-2 flex justify-end">
+                        <div className="border-t border-gray-100 pt-2 flex justify-between items-center">
+                            <div className="flex gap-2">
+                                {/* 수령 완료 버튼 (PREPARING 또는 PAID 상태일 때 시연용) */}
+                                {(order.status === 'PREPARING' || order.status === 'PAID') && (
+                                    <button 
+                                      onClick={async () => {
+                                          if(window.confirm("상품을 수령하셨나요?")) {
+                                              try {
+                                                  await axios.put(`/orders/${order.order_id}/status`, { status: 'PICKED_UP' });
+                                                  alert("수령 확인되었습니다! 리뷰를 작성해주세요.");
+                                                  window.location.reload(); // 확실한 UI 갱신을 위해 새로고침
+                                              } catch(e) { 
+                                                  console.error(e);
+                                                  alert("오류 발생"); 
+                                              }
+                                          }
+                                      }}
+                                      className="text-xs bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-200 flex items-center gap-1"
+                                    >
+                                      <CheckCircle className="w-3 h-3" /> 수령 완료
+                                    </button>
+                                )}
+
+                                {/* 리뷰 작성 버튼 (픽업 완료 시) */}
+                                {(order.status === 'PICKED_UP' || order.status === '완료') && (
+                                    <button 
+                                      onClick={() => openReviewModal(order.order_id)}
+                                      className="text-xs bg-pink-100 text-pink-600 px-3 py-1.5 rounded-lg font-bold hover:bg-pink-200 flex items-center gap-1"
+                                    >
+                                      <Edit3 className="w-3 h-3" /> 리뷰 쓰기
+                                    </button>
+                                )}
+                            </div>
                             <span className="font-bold text-gray-900">
                                 총 {order.items.reduce((sum, item) => sum + (item.snapshot_price * item.quantity), 0).toLocaleString()}원
                             </span>
@@ -173,14 +222,42 @@ const MyPage = () => {
         </div>
 
         {/* 로그아웃 */}
-        <button 
-          onClick={handleLogout}
-          className="w-full bg-white p-4 rounded-xl text-gray-500 hover:text-red-500 hover:bg-red-50 font-bold transition flex items-center justify-center gap-2 shadow-sm border border-gray-100"
-        >
-          <LogOut className="w-5 h-5" />
-          로그아웃
+        <button onClick={handleLogout} className="w-full bg-white p-4 rounded-xl text-gray-500 hover:text-red-500 hover:bg-red-50 font-bold transition flex items-center justify-center gap-2 shadow-sm border border-gray-100">
+          <LogOut className="w-5 h-5" /> 로그아웃
         </button>
       </div>
+
+      {/* 🌟 리뷰 작성 모달 */}
+      {isReviewModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-900">리뷰 작성</h3>
+              <button onClick={() => setIsReviewModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6"/></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex justify-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button key={star} onClick={() => setReviewData({...reviewData, rating: star})}>
+                    <Star className={`w-8 h-8 ${star <= reviewData.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'}`} />
+                  </button>
+                ))}
+              </div>
+              <textarea 
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-pink-500 min-h-[100px]"
+                placeholder="꽃은 어떠셨나요? 솔직한 리뷰를 남겨주세요."
+                value={reviewData.content}
+                onChange={(e) => setReviewData({...reviewData, content: e.target.value})}
+              />
+              <button onClick={handleSubmitReview} className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 rounded-xl">
+                리뷰 등록하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

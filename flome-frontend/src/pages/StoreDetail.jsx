@@ -11,6 +11,7 @@ const StoreDetail = () => {
   const navigate = useNavigate();
   
   const [store, setStore] = useState(null); // 가게 정보
+  const [reviews, setReviews] = useState([]); // 리뷰 정보
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -20,21 +21,27 @@ const StoreDetail = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false); 
 
   useEffect(() => {
-    const fetchStoreDetail = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`/stores/${id}`);
-        console.log("가게 상세 데이터:", response.data);
-        setStore(response.data);
+        // 가게 정보와 리뷰 정보를 병렬로 호출
+        const [storeRes, reviewsRes] = await Promise.all([
+          axios.get(`/stores/${id}`),
+          axios.get(`/stores/${id}/reviews`)
+        ]);
+        
+        console.log("가게 상세 데이터:", storeRes.data);
+        setStore(storeRes.data);
+        setReviews(reviewsRes.data);
       } catch (err) {
-        console.error("가게 정보 로딩 실패:", err);
+        console.error("정보 로딩 실패:", err);
         setError("가게 정보를 불러올 수 없습니다.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStoreDetail();
+    fetchData();
 
     // 장바구니 상태 초기화
     const savedCart = JSON.parse(localStorage.getItem('cart') || '[]');
@@ -46,6 +53,11 @@ const StoreDetail = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, [id]);
+
+  // 평균 평점 계산
+  const averageRating = reviews.length > 0 
+    ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) 
+    : "0.0";
 
   const getProductEmoji = (name) => {
     if (name.includes('장미')) return '🌹';
@@ -90,12 +102,6 @@ const StoreDetail = () => {
       container.scrollBy({ left: direction === 'left' ? -scrollAmount : scrollAmount, behavior: 'smooth' });
     }
   };
-
-  // 가짜 리뷰 데이터 (아직 백엔드 연결 안됨)
-  const reviews = [
-    { id: 1, user: "dooly**", rating: 5, content: "여자친구가 너무 좋아해요! 꽃 상태 최고🌹", img: "bg-red-100", tag: "사진리뷰" },
-    { id: 2, user: "hgd**", rating: 5, content: "배달도 빠르고 포장도 꼼꼼합니다.", img: "bg-blue-100", tag: "재주문" },
-  ];
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-pink-500"/></div>;
   if (error || !store) return <div className="min-h-screen flex items-center justify-center text-gray-500">가게를 찾을 수 없습니다.</div>;
@@ -169,8 +175,8 @@ const StoreDetail = () => {
           <h1 className="text-2xl font-bold text-gray-900 mb-1">{store.name}</h1>
           <div className="flex items-center justify-center gap-1 text-sm">
             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-            <span className="font-bold">4.9</span> {/* 평점 임시값 */}
-            <span className="text-gray-400">(100+)</span>
+            <span className="font-bold">{averageRating}</span>
+            <span className="text-gray-400">({reviews.length})</span>
             <span className="text-gray-300">|</span>
             <span className="text-gray-500">{store.address}</span>
           </div>
@@ -197,33 +203,35 @@ const StoreDetail = () => {
         </div>
       </div>
 
-      {/* 리뷰 슬라이드 (가짜 데이터) */}
+      {/* 리뷰 슬라이드 (실제 데이터) */}
       <div className="bg-gray-50 overflow-hidden pb-6">
         <div className="flex justify-between items-center px-5 mb-3">
           <h3 className="font-bold text-lg text-gray-900 flex items-center gap-1">최근 리뷰 <span className="text-pink-500">{reviews.length}</span></h3>
-          <span className="text-xs text-gray-400 cursor-pointer">전체보기 &gt;</span>
+          <span onClick={() => navigate(`/store/${id}/reviews`)} className="text-xs text-gray-400 cursor-pointer hover:text-pink-500">전체보기 &gt;</span>
         </div>
-        <div className="relative group px-1">
-          <button onClick={() => scrollReviews('left')} className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover:opacity-100 transition"><ChevronLeft className="w-5 h-5" /></button>
-          <div id="reviews-scroll-container" className="flex overflow-x-auto gap-3 px-5 scrollbar-hide scroll-smooth">
-            {reviews.map((review) => (
-              <div key={review.id} className="min-w-[240px] bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <div className="flex text-yellow-400 mb-1">{[...Array(review.rating)].map((_, i) => <Star key={i} className="w-3 h-3 fill-current" />)}</div>
-                    <span className="text-xs text-gray-400">{review.user}님</span>
-                  </div>
-                  {review.tag && <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-sm">{review.tag}</span>}
+        {reviews.length === 0 ? (
+            <div className="text-center text-gray-400 py-4 text-sm">아직 등록된 리뷰가 없습니다.</div>
+        ) : (
+            <div className="relative group px-1">
+            <button onClick={() => scrollReviews('left')} className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover:opacity-100 transition"><ChevronLeft className="w-5 h-5" /></button>
+            <div id="reviews-scroll-container" className="flex overflow-x-auto gap-3 px-5 scrollbar-hide scroll-smooth">
+                {reviews.map((review) => (
+                <div key={review.review_id} className="min-w-[240px] bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
+                    <div className="flex justify-between items-start mb-2">
+                    <div>
+                        <div className="flex text-yellow-400 mb-1">{[...Array(review.rating)].map((_, i) => <Star key={i} className="w-3 h-3 fill-current" />)}</div>
+                        <span className="text-xs text-gray-400">{review.writer_id}님</span>
+                    </div>
+                    </div>
+                    <div className="flex gap-3">
+                    <div className="flex-1"><p className="text-sm text-gray-700 line-clamp-2 leading-relaxed">{review.content}</p></div>
+                    </div>
                 </div>
-                <div className="flex gap-3">
-                  <div className="flex-1"><p className="text-sm text-gray-700 line-clamp-2 leading-relaxed">{review.content}</p></div>
-                  {review.img && <div className={`w-14 h-14 rounded-lg ${review.img} flex-shrink-0 flex items-center justify-center text-xl`}>📷</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-          <button onClick={() => scrollReviews('right')} className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover:opacity-100 transition"><ChevronRight className="w-5 h-5" /></button>
-        </div>
+                ))}
+            </div>
+            <button onClick={() => scrollReviews('right')} className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover:opacity-100 transition"><ChevronRight className="w-5 h-5" /></button>
+            </div>
+        )}
       </div>
 
       {/* 메뉴 리스트 (API 데이터 사용) */}

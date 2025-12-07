@@ -121,8 +121,8 @@ const ProductList = () => {
                 <h3 className="text-xl font-bold text-gray-900 leading-tight mb-1">{store.name}</h3> 
                 <div className="flex items-center gap-1 text-sm text-gray-600">
                   <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                  <span className="font-bold text-gray-900">{store.rating || 4.8}</span> {/* 평점 없으면 기본값 */}
-                  <span>({store.review_count || 120})</span>
+                  <span className="font-bold text-gray-900">{store.average_rating || "0.0"}</span>
+                  <span>({store.review_count || 0})</span>
                   <span>•</span>
                   <span>{store.address ? store.address.split(' ')[1] : "거리 정보 없음"}</span> {/* 주소 간단히 */}
                 </div>

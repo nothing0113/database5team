@@ -19,12 +19,14 @@ class ProductType(str, enum.Enum):
 class StockStatus(str, enum.Enum):
     AVAILABLE = "AVAILABLE"
     SOLD_OUT = "SOLD_OUT"
+    DISCARDED = "DISCARDED"
 
 class OrderStatus(str, enum.Enum):
     PENDING = "PENDING"
     PAID = "PAID"
     PREPARING = "PREPARING"
     PICKED_UP = "PICKED_UP"
+    CANCELED = "CANCELED"
 
 # Models (테이블 정의)
 
@@ -115,6 +117,7 @@ class Order(Base):
     order_date = Column(DateTime(timezone=True), server_default=func.now())
     pickup_date = Column(DateTime(timezone=True), nullable=True)
     status = Column(SAEnum(OrderStatus), default=OrderStatus.PENDING)
+    delivery_request = Column(String, nullable=True) # 배달/픽업 요청사항 (방법/시간)
 
     # Relationships
     member = relationship("Member", back_populates="orders")
